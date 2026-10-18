@@ -115,8 +115,15 @@ def to_gemini_declaration(tool):
         )
 
 
-async def investigate(question: str):
-    server = StdioServerParameters(command=sys.executable, args=["mcp_server.py"])
+async def investigate(question: str, analyst: str = None, on_step=None):
+    """Run one investigation. `on_step(step_dict)` is called after every tool call."""
+    server_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp_server.py")
+    server = StdioServerParameters(
+        command=sys.executable,
+        args=[server_path],
+        # the MCP launcher does NOT pass most env vars on its own, so pass this one
+        env={"ANALYST": analyst or os.getenv("ANALYST", "alice")},
+    )
 
     async with stdio_client(server) as (read, write):
         async with ClientSession(read, write) as session:
@@ -158,6 +165,8 @@ async def investigate(question: str):
                         c.text for c in result.content if hasattr(c, "text")
                     )
                     trace.append({"tool": fc.name, "input": args, "output": output})
+                    if on_step:
+                        on_step(trace[-1])
                     result_parts.append(
                         types.Part.from_function_response(
                             name=fc.name, response={"result": output}
